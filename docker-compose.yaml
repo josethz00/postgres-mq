@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  db:
+    image: postgres:13
+    restart: always
+    container_name: postgres-mq
+    ports:
+      - '5439:5432'
+    environment:
+      POSTGRES_USER: postgres-mq
+      POSTGRES_PASSWORD: postgres-mq
+      POSTGRES_DB: postgres-mq
+networks:
+  user-network:
+    driver: bridge
+  proxynet:
+    name: custom_network

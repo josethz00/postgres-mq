@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+./data
+requirements
+.vscode
+commitlint.config.js
+jest.global-setup.js
+jest.global-teardown.js
