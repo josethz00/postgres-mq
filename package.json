@@ -6,7 +6,8 @@
   "scripts": {
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "start:dev": "tsnd -r tsconfig-paths/register --exit-child --transpile-only --ignore-watch node_modules src/main.ts",
-    "example:test": "tsnd -r tsconfig-paths/register --exit-child --transpile-only --ignore-watch node_modules src/test.ts"
+    "example:pubsub": "tsnd -r tsconfig-paths/register --exit-child --transpile-only --ignore-watch node_modules src/pubsub-test.ts",
+    "example:mq": "tsnd -r tsconfig-paths/register --exit-child --transpile-only --ignore-watch node_modules src/mq-test.ts"
   },
   "dependencies": {
     "pg": "^8.8.0"
