@@ -1,4 +1,5 @@
 import { Client, Notification } from 'pg';
+import { SqlQueries } from './sql-queries';
 
 interface IinitPostgresMQ {
   user: string;
@@ -38,14 +39,10 @@ const initPostgresMQ = ({
 
   if (type === 'message-queue') {
     dbClient.query(
-      `CREATE TABLE IF NOT EXISTS message_queue (
-        id SERIAL PRIMARY KEY,
-        queue_name VARCHAR(255) NOT NULL UNIQUE,
-        message JSONB NOT NULL,
-        delay INTEGER NOT NULL DEFAULT 0,
-        retry INTEGER NOT NULL DEFAULT 0,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )`,
+      `
+      ${SqlQueries.CREATE_MESSAGE_QUEUE_TABLE()}
+      ${SqlQueries.CREATE_MESSAGE_TABLE()}
+      `,
     );
   }
 
@@ -81,7 +78,7 @@ class PostgresMQ {
    */
   public subscribeTo(queueName: string, action: (...args: any) => void): void {
     console.log('Subscribing to queue', ` "${queueName}" `);
-    this.dbClient.query(`LISTEN ${queueName}`);
+    this.dbClient.query(SqlQueries.LISTEN(queueName));
 
     this.dbClient.on('notification', (msg: Notification) => {
       action(msg);
@@ -100,7 +97,7 @@ class PostgresMQ {
     message: Record<string, unknown>;
   }): void {
     console.log('Adding message to queue', ` "${queueName}" `);
-    this.dbClient.query(`NOTIFY ${queueName}, '${JSON.stringify(message)}'`);
+    this.dbClient.query(SqlQueries.NOTIFY(queueName, message));
   }
 
   /**
@@ -121,12 +118,13 @@ class PostgresMQ {
     delay?: number;
     retry?: number;
   }): Promise<void> {
-    console.log('Adding message to queue', ` "${queueName}" `);
-    await this.dbClient.query(
-      `INSERT INTO message_queue (queue_name, message, delay, retry) VALUES ($1, $2, $3, $4)
-      ON CONFLICT (queue_name) DO UPDATE SET message = message_queue.message || $2::jsonb WHERE message_queue.queue_name = $1`,
-      [queueName, JSON.stringify(message), delay, retry],
-    );
+    await this.dbClient.query(SqlQueries.CREATE_MESSAGE_QUEUE(), [queueName]);
+    await this.dbClient.query(SqlQueries.CREATE_MESSAGE(), [
+      message,
+      delay,
+      retry,
+      queueName,
+    ]);
     this.publishMessage({ queueName, message });
   }
 
@@ -143,31 +141,43 @@ class PostgresMQ {
         channel: msg.channel,
         payload: msg.payload ? JSON.parse(msg.payload) : '<empty-value>',
       });
+
       const rows = await this.dbClient.query(
-        `SELECT * FROM message_queue WHERE queue_name = $1`,
+        SqlQueries.GET_QUEUE_UNCONSUMED_MESSAGES(),
         [queueName],
       );
+
       if (rows.rowCount > 0) {
         rows.rows.forEach(async (row) => {
-          const { id, message, delay, created_at } = row;
+          const { id, msg, delay, created_at } = row;
           if (delay > 0) {
             setTimeout(() => {
               action({
                 id,
                 created_at,
-                ...message,
+                ...msg,
               });
             }, delay * 1000);
+
+            await this.dbClient.query(
+              SqlQueries.UPDATE_MESSAGE_CONSUMED_STATUS(true),
+              [id],
+            );
+
+            return;
           }
           action({
             id,
             created_at,
-            ...message,
+            ...msg,
           });
 
-          await this.dbClient.query(`DELETE FROM message_queue WHERE id = $1`, [
-            id,
-          ]);
+          /* essa linha deve mesmo ser atualizada? os consumers que perderem a
+          mensagem não vão conseguir consumir novamente? */
+          await this.dbClient.query(
+            SqlQueries.UPDATE_MESSAGE_CONSUMED_STATUS(true),
+            [id],
+          );
         });
       }
     });
